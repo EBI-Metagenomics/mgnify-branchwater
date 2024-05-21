@@ -24,19 +24,30 @@ def getacc(signatures, config):
 
     # POST to mastiff
     http = urllib3.PoolManager()
-    base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
+    # base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
+    base_url = '10.100.90.147'
     r = http.request('POST',
                      f"{base_url}/search",
                      body=buf.getvalue(),
                      headers={'Content-Type': 'application/json'})
+
+
+    # log the status
+    print(f"Search status: {r.status}")
+
+
     if r.status != 200:
         raise SearchError(r.data.decode('utf-8'), r.status)
 
     query_results_text = r.data.decode('utf-8')
 
+    print(f"Query results text: {query_results_text}")
+
     results_wrap_fp = io.StringIO(query_results_text)
     mastiff0_df = pd.read_csv(results_wrap_fp)
     n_raw_results = len(mastiff0_df)
+
+    print(f"Number of raw results: {n_raw_results}")
 
     if n_raw_results == 0:
         return pd.DataFrame(columns=DEFAULT_COLUMNS)

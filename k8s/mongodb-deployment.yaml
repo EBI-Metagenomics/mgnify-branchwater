@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mgsdev/mgnify-bw-mongodb:latest
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: bw-db
+          mountPath: /data/bw_db
+        - name: mongodb-data
+          mountPath: /data/db
+      volumes:
+      - name: bw-db
+        persistentVolumeClaim:
+          claimName: index-pvc
+      - name: mongodb-data
+        persistentVolumeClaim:
+          claimName: mongodb-data-pvc

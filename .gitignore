@@ -9,4 +9,6 @@ prod.env
 mongodb/
 # pixi environments
 .pixi
+.idea
+buildmongo/1_bqKey.json
 

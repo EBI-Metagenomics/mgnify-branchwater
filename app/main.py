@@ -46,6 +46,8 @@ def home():
         except SearchError as e:
             return e.args
 
+        # return mastiff_df.to_json(orient='records')  # return acc results to client
+
         acc_t = tuple(mastiff_df.SRA_accession.tolist())
 
         # for 'basic' query, override metadata form with selected categories
@@ -121,4 +123,4 @@ def examples():
 # in production this changes:
 #
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=8000)
+    app.run(debug=True, host='0.0.0.0', port=8000)

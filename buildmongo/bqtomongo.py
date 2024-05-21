@@ -137,6 +137,13 @@ for d in meta_dic:
 # client = pm.MongoClient(, 27017)  # in first location insert the port
 client = pm.MongoClient("mongodb://localhost:27017/")
 db = client["sradb"]
+# check if db exists
+# if db.list_collection_names() == []:
+#     raise Exception("BQM MongoDB database 'sradb' does not exist.")
+# else:
+#     print(f"Database 'sradb' found.")
+#     #     print length of collecitons
+#     print(f'collections: {db.list_collection_names()}')
 sradb_col = db["sradb_list"]
 sradb_col.drop()  # delete current collection if already present
 res = sradb_col.insert_many(meta_dic)
