@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: index-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: index
+  template:
+    metadata:
+      labels:
+        app: index
+    spec:
+      containers:
+      - name: index
+        image: mgsdev/mgnify-bw-index:latest
+        ports:
+        - containerPort: 80
+        envFrom:
+        - configMapRef:
+            name: prod-env
+        volumeMounts:
+        - name: bw-db
+          mountPath: /data
+      volumes:
+      - name: bw-db
+        persistentVolumeClaim:
+          claimName: index-pvc

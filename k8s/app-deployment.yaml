@@ -20,10 +20,18 @@ spec:
         envFrom:
         - configMapRef:
             name: prod-env
-        volumeMounts:
-        - name: app-volume
-          mountPath: /app
-      volumes:
-      - name: app-volume
-        persistentVolumeClaim:
-          claimName: app-pvc
+#        volumeMounts:
+#        - name: app-volume
+#          mountPath: /app
+
+#        - name: app-data-volume
+#          mountPath: /data
+
+#      volumes:
+#      - name: app-volume
+#        persistentVolumeClaim:
+#          claimName: app-pvc
+#
+#      - name: app-data-volume
+#        persistentVolumeClaim:
+#          claimName: app-data-pvc

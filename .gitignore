@@ -11,4 +11,7 @@ mongodb/
 .pixi
 .idea
 buildmongo/1_bqKey.json
+bw_db/
+minikube_rocks_data/
+
 
