@@ -46,6 +46,9 @@ def home():
         except SearchError as e:
             return e.args
 
+        # log a statement
+        print(f"SANITY CHECK: {len(mastiff_df)}")
+
         # return mastiff_df.to_json(orient='records')  # return acc results to client
 
         acc_t = tuple(mastiff_df.SRA_accession.tolist())
