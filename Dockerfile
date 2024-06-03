@@ -1,7 +1,7 @@
 # Dockerfile
 
 # Specify the base image with the desired platform
-FROM --platform=linux/amd64 ghcr.io/prefix-dev/pixi:0.16.0 AS build
+FROM ghcr.io/prefix-dev/pixi:0.16.0 AS build
 COPY . /tmp/build
 
 WORKDIR /tmp/build
@@ -14,7 +14,7 @@ RUN pixi run -e build build-server
 
 # Final image is based on debian, because we need a libgcc.
 # We only copy the server binary, no need for pixi anymore
-FROM --platform=linux/amd64 docker.io/debian:bookworm-slim
+FROM docker.io/debian:bookworm-slim
 
 COPY --from=build /tmp/build/target/release/branchwater-server /app/bin/branchwater-server
 
