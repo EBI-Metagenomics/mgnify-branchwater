@@ -24,22 +24,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/5.4.4/js/tabulator.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   </head>
-  <body>
-    <br />
-    <br />
-
-    <!-- Intro/header -->
-
-    <div class="parent-element" style="text-align: center">
-      <h4>
+  <body class="vf-body">
+    <h4 class="vf-text vf-text-heading--4">
         Curious what publicly available metagenomes contain an organism you're
         interested in?
       </h4>
-      <h6>
-        Start by selecting your genome below (fasta format only) or checking out
-        our <a href="/examples">examples</a>.
-      </h6>
-    </div>
+      <p class="vf-text">
+          <strong>
+              Start by selecting your genome below (fasta format only) or checking out our <a href="/examples" class="vf-link">examples</a>.
+          </strong>
+      </p>
     <hr style="border-width: 3px; border-color: black" />
 
     <div style="margin: 50px">
@@ -49,7 +43,7 @@
     <!-- Create form -->
     <div id="form-container"></div>
     <form id="form" style="margin: 40px">
-      <button type="submit" id="myButton" class="btn btn-light" disabled>
+      <button type="submit" id="myButton" class="vf-button vf-button--primary vf-button--sm" disabled>
         <strong>Submit</strong>
       </button>
     </form>
@@ -115,43 +109,35 @@
           });
       });
     </script>
-
-    <br />
-    <br />
-    <div
-      class="card border-primary mb-3"
-      style="margin-left: 50px; margin-right: 50px"
-    >
+    <div>
       <!-- <div class="card-header">Header</div> -->
-      <div class="card-body">
+      <div class="vf-content">
         <!-- <h4 class="card-title">Primary card title</h4> -->
-        <p class="card-text"></p>
-
-       <p style="margin: 20px">
+       <p class="vf-text">
          This
-         <a href="/home"><b>default search</b></a> allows you to rapidly search
+         <a href="/home" class="vf-link"><b>default search</b></a> allows you to rapidly search
          over 1 million metagenomes deposited in NCBI's
          <a href="https://www.ncbi.nlm.nih.gov/sra/"
-           >Sequence Read Archive (SRA)</a
+           class="vf-link">Sequence Read Archive (SRA)</a
          >. <strong>For best results, search with sequences 50kb or longer.</strong>
          Sequences shorter than 10kb will rarely produce results. Quality of the match to the uploaded genome is represented by the cANI score (calculated from containment). The relationship between cANI and taxonomic level of the match varies with the genome of interest. In general, matches are most robust to the genus taxonomic level and a cANI > 0.97 often represents a species-level match.
          </p>
 
-        <p style="margin: 20px"> 
+        <p class="vf-text">
           Search typically takes less than 5 minutes. Default search 
           returns SRA metagenomes with geolocation data and with >10% containment
           of the query genome, presented in a table, map, and summary plots for selected high-interest 
-          metadata. An <a href="/advanced">advanced search</a> is available for selection of included metadata.
+          metadata. An <a href="/advanced" class="vf-link">advanced search</a> is available for selection of included metadata.
           Further details regarding search and metadata
-          can be found on the <a href="/about">about page</a>. 
+          can be found on the <a href="/about" class="vf-link">about page</a>.
         </p>
 
-        <p style="margin: 20px">
+        <p class="vf-text">
           <strong>Please note that this web server is still in development
             and the interface may occasionally be updated.</strong> If your query does not return
             results in 5 minutes, please try again in an hour or reach out 
             to us via the branchwater-web
-            <a href="https://github.com/sourmash-bio/branchwater-web/issues">issue tracker</a>
+            <a href="https://github.com/sourmash-bio/branchwater-web/issues" class="vf-link">issue tracker</a>
             on github.
         </p>
       </div>

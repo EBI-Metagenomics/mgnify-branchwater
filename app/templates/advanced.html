@@ -3,21 +3,13 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <!-- Tabulator CSS file options: https://cdnjs.com/libraries/tabulator-->
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/tabulator/5.4.4/css/tabulator_bootstrap5.min.css"
-      integrity="sha512-E3brrBS070QzILPd7448M+21NlCrA3fht9RmFvS9GIKo443nGQRF3tVOuK7YcY1gzPQsaks2cP/Ivp/yhoJCNA=="
-      crossorigin="anonymous"
-      referrerpolicy="no-referrer"
-    />
 
     <script
       defer="defer"
       src="static/mgnify-component/mgnify-sourmash-component.js"
     ></script>
     <!-- Custom scripts and functions -->
-    <script src="static/formdata.js"></script>
+<!--?    <script src="static/formdata.js"></script>-->
     <script src="static/dashboard.js"></script>
 
     <!-- Tabulator and plotly libraries -->
@@ -25,19 +17,20 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   </head>
   <body>
-    <br />
-    <br />
-    <div class="parent-element" style="text-align: center">
-      <h3>Advanced Search</h3>
-    </div>
-    <hr style="border-width: 3px; border-color: black" />
-    <br />
-    <h3 style="margin: 20px">1) Upload your genome (fasta format only)</h3>
-    <div style="margin: 50px">
+<!--    <br />-->
+<!--    <br />-->
+<!--    <div class="parent-element" style="text-align: center">-->
+<!--      <h3>Advanced Search</h3>-->
+<!--    </div>-->
+    <h1 class="vf-text vf-text-heading--1">
+        Advanced Search
+    </h1>
+    <h3>1) Upload your genome (fasta format only)</h3>
+    <div>
       <mgnify-sourmash-component id="sourmash" ksize="21" scaled="1000" />
     </div>
-    <h3 style="margin: 20px">2) Select metadata</h3>
-    <p style="margin: 20px">
+    <h3>2) Select metadata</h3>
+    <p>
       Metadata options below and their percent (%) availability were curated
       from information provided by NCBI. Where possible, definitions of metadata
       can be seen by hovering your mouse over the name of the metadata option in
@@ -45,13 +38,13 @@
       categories have information available and estimates below may not be
       current. Further details regarding the curated metadata available here can
       be found on the
-      <a href="/about">about page</a>. Further details on accessions and their
+      <a class="vf-link" href="/about">about page</a>. Further details on accessions and their
       associated metadata can be found on the
-      <a href="https://www.ncbi.nlm.nih.gov/sra/">NCBI SRA website</a>.
+      <a class="vf-link" href="https://www.ncbi.nlm.nih.gov/sra/">NCBI SRA website</a>.
     </p>
     <!-- Create form -->
     <div id="form-container"></div>
-    <form id="form" style="margin: 40px"></form>
+    <form id="form"></form>
     <script>
       document.getElementById("form").innerHTML =
         html +
