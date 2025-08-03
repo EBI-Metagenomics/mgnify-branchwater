@@ -5,7 +5,7 @@ import os
 import urllib3
 import gzip
 import string
-
+import json
 
 DEFAULT_COLUMNS = ["SRA_accession", "containment", "cANI"]
 
@@ -16,8 +16,9 @@ class SearchError(Exception):
 
 def getacc(signatures, config):
     # remove whitespace from string and compress signatures to gzipped bytes
-    sig_str = signatures.translate({ord(c): None for c in string.whitespace})
-    json_bytes = f"[{sig_str}]".encode('utf-8')
+    # sig_str = signatures.translate({ord(c): None for c in string.whitespace})
+    # json_bytes = f"[{sig_str}]".encode('utf-8')
+    json_bytes = json.dumps(signatures).encode('utf-8')
     buf = io.BytesIO()
     with gzip.open(buf, 'w') as fout:
         fout.write(json_bytes)
