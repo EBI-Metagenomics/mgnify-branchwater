@@ -14,11 +14,15 @@ class SearchError(Exception):
     """Search index errors"""
 
 
-def getacc(signatures, config):
+def getacc(signatures, config, use_precomputed_sketches=False):
     # remove whitespace from string and compress signatures to gzipped bytes
     # sig_str = signatures.translate({ord(c): None for c in string.whitespace})
+    if not use_precomputed_sketches:
+        sig_str = signatures.translate(
+            {ord(c): None for c in string.whitespace})
     # json_bytes = f"[{sig_str}]".encode('utf-8')
-    json_bytes = json.dumps(signatures).encode('utf-8')
+    json_bytes = json.dumps(signatures).encode('utf-8') if use_precomputed_sketches else f"[{sig_str}]".encode('utf-8')
+    # json_bytes = json.dumps(signatures).encode('utf-8')
     buf = io.BytesIO()
     with gzip.open(buf, 'w') as fout:
         fout.write(json_bytes)

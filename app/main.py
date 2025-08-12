@@ -99,7 +99,7 @@ print(f'threshold: {THRESHOLD}')
 @app.route('/health', methods=["GET"])
 def check_health():
     base_url = 'http://index-service'
-    # base_url = 'http://localhost:80clear83'
+    # base_url = 'http://localhost:8083'
     http = urllib3.PoolManager()
     r = http.request('GET',
                      f"{base_url}/health",
@@ -109,6 +109,7 @@ def check_health():
 
     if r.status != 200:
         raise SearchError(r.data.decode('utf-8'), r.status)
+    return jsonify({'status': 'ok'}), 200
 
 @app.route('/mags', methods=["POST"])
 def search_by_mgyg_accession():
@@ -133,7 +134,7 @@ def search_by_mgyg_accession():
 
         try:
             # Call getacc with the loaded signature
-            mastiff_df = getacc(signature_data, app.config)
+            mastiff_df = getacc(signature_data, app.config, use_precomputed_sketches=True)
         except SearchError as e:
             return jsonify({'error': str(e)}), 500
 
