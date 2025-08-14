@@ -38,6 +38,7 @@ def getacc(signatures, config, http):
 
     # POST to mastiff
     base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
+    print(f'BASE URL {base_url}')
     r = http.request('POST',
                      f"{base_url}/search",
                      body=buf.getvalue(),

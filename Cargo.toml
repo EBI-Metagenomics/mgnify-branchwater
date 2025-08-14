@@ -21,7 +21,7 @@ reqwest-middleware = { version = "0.4.0", features = [ "json" ] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 size = "0.4.0"
-sourmash = { version = "0.18.0" }
+sourmash = { version = "0.19.0" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 
@@ -49,3 +49,5 @@ opt-level = 3
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+debug = true
