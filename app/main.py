@@ -4,6 +4,8 @@ import duckdb
 import yaml
 import urllib3
 from flask import Flask, render_template, request, jsonify, g, current_app
+import polars as pl
+import json
 
 import sentry_sdk
 sentry_sdk.init(
@@ -92,7 +94,20 @@ def home():
 
         # get metadata from duckdb
         result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
+        print(f"FIRST RESULT for {result_list[0]}.")
         print(f"Metadata for {len(result_list)} acc returned.")
+        with open("my_accessions.json") as f:
+            accession_data = json.load(f)
+
+        # Convert to Polars Series for faster .is_in checks
+        accession_series = pl.Series("acc", accession_data["accessions"])
+
+        result_list = result_list.with_columns(
+            pl.col("acc").is_in(accession_series).alias("in_json_file")
+        )
+
+
+
 
         return result_list.fill_null("NP").write_json(None)  # return metadata results to client
     return render_template('index.html', n_datasets=f"{app.config.metadata['n_datasets']:,}")
@@ -120,6 +135,18 @@ def advanced():
         result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
         print(f"Metadata for {len(result_list)} acc returned.")
 
+
+        with open("my_accessions.json") as f:
+            accession_data = json.load(f)
+
+        # Convert to Polars Series for faster .is_in checks
+        accession_series = pl.Series("acc", accession_data["accessions"])
+
+        result_list = result_list.with_columns(
+            pl.col("acc").is_in(accession_series).alias("in_json_file")
+        )
+
+        print(f"MGS ALTERED DATA  {result_list[0]}.")
         return result_list.fill_null("NP").write_json(None)  # return metadata results to client
     return render_template('advanced.html')
 
