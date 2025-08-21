@@ -14,7 +14,8 @@ def main(
     accs="/data/bw_db/sraids",
     limit=True,
     output="/data/bw_db/metadata.parquet",
-    key_path="/data/bw_db/bqKey.json",
+    # key_path="/data/bw_db/bqKey.json",
+    key_path="/bqKey.json",
 ):
     # get current directory
     dir_path = os.path.dirname(os.path.realpath(__file__))
