@@ -44,13 +44,19 @@ def main(
 ):
     orig_metadata = pl.scan_parquet(parquet_metadata)
     orig_metadata = orig_metadata.with_columns(
-        pl.col("lat_lon").map_batches(harmonize_lat_lon, is_elementwise=True)
+        # pl.col("lat_lon").map_batches(harmonize_lat_lon, is_elementwise=True)
+        pl.col("lat_lon").map_batches(harmonize_lat_lon, is_elementwise=True, return_dtype=pl.List(pl.Float64)).alias("lat_lon_dd"),
     )
 
     if force:
         Path(output).unlink()
 
+
+    df = orig_metadata.collect()
     conn = duckdb.connect(database=output, read_only=False)
+    conn.register("orig_metadata", df)
+
+    # conn = duckdb.connect(database=output, read_only=False)
 
     conn.sql("""
         CREATE TABLE metadata AS

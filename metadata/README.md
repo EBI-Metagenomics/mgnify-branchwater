@@ -51,3 +51,81 @@ Based on the SRA instructions at [Setting-up BigQuery](https://www.ncbi.nlm.nih.
 3. In the BigQuery console, under `sraproject` create a dataset named `mastiffdata`
 
 <!-- end sra-metadata-access -->
+
+
+## Dockerized metadata builder
+
+This folder is now containerized. You can build and run a Docker image that:
+- builds the metadata parquet via BigQuery or via the public SRA metadata on S3, and
+- loads the parquet into a DuckDB file.
+
+A persistent host directory is recommended for inputs/outputs and credentials. The container expects them at `/data/bw_db`.
+
+### 1) Build the image
+
+```
+docker build -t branchwater-metadata .
+```
+
+### 2) Prepare local data directory
+
+On the host, create a directory for inputs/outputs, e.g. `$(pwd)/bw_db`, and place your files there:
+- `sraids` — a text file with accession IDs (one per line)
+- `bqKey.json` — BigQuery service account JSON (only needed for the BigQuery flow)
+
+```
+mkdir -p bw_db
+# cp your sraids file into bw_db/sraids
+# cp your BigQuery key into bw_db/bqKey.json
+```
+
+### 3a) Build parquet via BigQuery
+
+You must have access to the `nih-sra-datastore` project (starred in your BigQuery explorer) and a project/dataset per README above. Run:
+
+```
+docker run --rm \
+  -v $(pwd)/bw_db:/data/bw_db \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/data/bw_db/bqKey.json \
+  branchwater-metadata bq \
+    --acc /data/bw_db/sraids \
+    --output /data/bw_db/metadata.parquet \
+    --limit   # remove this flag to build the full dataset
+```
+
+Notes:
+- You can omit the env var and instead pass `--key-path /data/bw_db/bqKey.json` explicitly.
+
+### 3b) Build parquet via public SRA metadata on S3
+
+This method doesn’t require BigQuery credentials. It may transfer a large amount of data on first use.
+
+```
+docker run --rm \
+  -v $(pwd)/bw_db:/data/bw_db \
+  branchwater-metadata sra \
+    --acc /data/bw_db/sraids \
+    --output /data/bw_db/metadata.parquet \
+    --build-test-db   # remove this flag to build the full dataset
+```
+
+### 4) Load parquet into DuckDB
+
+```
+docker run --rm \
+  -v $(pwd)/bw_db:/data/bw_db \
+  branchwater-metadata duckdb /data/bw_db/metadata.parquet \
+    --output /data/bw_db/metadata.duckdb --force
+```
+
+### Default container help
+
+```
+docker run --rm branchwater-metadata --help
+```
+
+### Notes
+- The container exposes `/data/bw_db` as a volume; bind-mount a host folder to persist outputs.
+- The BigQuery flow defaults to reading the key from `/data/bw_db/bqKey.json` and also respects `GOOGLE_APPLICATION_CREDENTIALS`.
+- The older note in this README about editing `bqtomongo.py` is obsolete here; use the `--limit` or `--build-test-db` flags to keep builds small while testing.
+- We use `polars-lts-cpu` (instead of `polars`) to avoid requiring AVX2/FMA CPU features; this improves compatibility on older CPUs and in some container environments.

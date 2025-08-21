@@ -96,7 +96,7 @@ def home():
         result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
         print(f"FIRST RESULT for {result_list[0]}.")
         print(f"Metadata for {len(result_list)} acc returned.")
-        with open("my_accessions.json") as f:
+        with open("public_emg_runs.json") as f:
             accession_data = json.load(f)
 
         # Convert to Polars Series for faster .is_in checks
