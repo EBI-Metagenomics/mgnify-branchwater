@@ -3,6 +3,10 @@ import io
 import os
 import gzip
 import string
+import logging
+from pathlib import Path
+
+LOGGER = logging.getLogger(__name__)
 
 
 DEFAULT_COLUMNS = {
@@ -18,8 +22,8 @@ class SearchError(Exception):
 
 def getmetadata(config, http):
     # GET metadata stats from index server
-    # base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
-    base_url = 'https://branchwater-api.jgi.doe.gov'
+    base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
+    # base_url = 'https://branchwater-api.jgi.doe.gov'
     r = http.request('GET', f"{base_url}/metadata/stats")
     if r.status != 200:
         raise SearchError(r.data.decode('utf-8'), r.status)
@@ -28,6 +32,21 @@ def getmetadata(config, http):
 
     return metadata
 
+
+def get_indices(k, db, data_dir=None):
+    """Return a list of RocksDB index files for the given k and db.
+
+    Parameters:
+    - k: k-mer size or identifier used in file naming.
+    - db: database name used in file naming and path.
+    - data_dir: optional base directory for index data. If not provided,
+      will use the DATA_DIR environment variable or default to '/data'.
+    """
+    base_dir = Path(data_dir) if data_dir else Path(os.environ.get("DATA_DIR", "/data"))
+    index_dir = base_dir / db / "metagenomes" / "index"
+    new_files = list(index_dir.glob(f"wort-{db.lower()}-{k}-db*.rocksdb"))
+    LOGGER.info(f"Found new indexes: {new_files}")
+    return new_files
 
 def getacc(signatures, config, http):
     # remove whitespace from string and compress signatures to gzipped bytes

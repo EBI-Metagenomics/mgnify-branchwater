@@ -5,6 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: index
+    ports:
+        - "8081:8080"
     restart: always
     volumes:
       - ./bw_db:/data/
@@ -29,6 +31,7 @@ services:
       - prod.env
     command: >
       gunicorn
+        --reload
         --bind 0.0.0.0:8000
         --timeout 120
         --workers 4

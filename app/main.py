@@ -1,3 +1,4 @@
+import glob
 import os
 
 import duckdb
@@ -8,6 +9,12 @@ import polars as pl
 import json
 
 import sentry_sdk
+
+from validators import validate_query
+from schemas import MagsQuery
+
+# from schemas import MagsQuery
+
 sentry_sdk.init(
     os.environ.get("SENTRY_DSN"),
     enable_tracing=True,
@@ -71,6 +78,78 @@ THRESHOLD = app.config.get('threshold', 0.1)
 METADATA = app.config.get('metadata', {})
 print(f'ksize: {KSIZE}')
 print(f'threshold: {THRESHOLD}')
+
+
+# @app.route('/health', methods=["GET"])
+# def check_health():
+#     base_url = 'http://index-service'
+#     # base_url = 'http://localhost:8083'
+#     http = urllib3.PoolManager()
+#     r = http.request('GET',
+#                      f"{base_url}/health",
+#                      headers={'Content-Type': 'application/json'})
+#
+#     print(f"Health status: {r.status}")
+#
+#     if r.status != 200:
+#         raise SearchError(r.data.decode('utf-8'), r.status)
+#     return jsonify({'status': 'ok'}), 200
+
+@app.route('/mags', methods=["POST"])
+@validate_query(MagsQuery)
+def search_by_mgyg_accession():
+    q: MagsQuery = g.query
+    # accession = q.accession
+    # catalogue = q.catalogue
+    if request.method == 'POST':
+        accession = request.args.get('accession')
+        catalogue = request.args.get('catalogue')
+        jsonify(accession)
+        sketch_dir = f'/signatures/{catalogue}'
+        pattern = os.path.join(sketch_dir, f"{accession}.fna.sig")
+        matching_files = glob.glob(pattern)
+
+        if not matching_files:
+            return jsonify({'error': f'No .sig file found for accession: {accession}'}), 404
+
+        sig_file_path = matching_files[0]  # Use the first match
+
+        try:
+            with open(sig_file_path, 'r') as f:
+                signature_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return jsonify({'error': 'Could not read or parse the signature file'}), 400
+
+        try:
+            # Call getacc with the loaded signature
+            mastiff_df = getacc(signature_data, app.config, use_precomputed_sketches=True)
+        except SearchError as e:
+            return jsonify({'error': str(e)}), 500
+
+        print(f"SANITY CHECK: {len(mastiff_df)}")
+
+        acc_t = tuple(mastiff_df.SRA_accession.tolist())
+
+        meta_list = (
+            'bioproject', 'assay_type', 'collection_date_sam',
+            'geo_loc_name_country_calc', 'organism', 'lat_lon'
+        )
+
+        result_list = getmongo(acc_t, meta_list, app.config)
+        print(f"Metadata for {len(result_list)} acc returned.")
+
+        mastiff_dict = mastiff_df.to_dict('records')
+
+        for r in result_list:
+            for m in mastiff_dict:
+                if r['acc'] == m['SRA_accession']:
+                    r['containment'] = round(m['containment'], 2)
+                    r['cANI'] = round(m['cANI'], 2)
+                    break
+
+        return jsonify(result_list)
+
+    return render_template('index.html')
 
 
 # define '/' and 'home' route
@@ -163,6 +242,22 @@ def contact():
 def examples():
     # note, fetch call sends to '/' route to return 'simple search' results
     return render_template('examples.html', n_datasets=f"{app.config.metadata['n_datasets']:,}")
+
+@app.route('/health', methods=["GET"])
+def check_health():
+    # base_url = 'http://index-service'
+    # base_url = 'http://localhost:8083'
+    base_url = app.config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
+    http = urllib3.PoolManager()
+    r = http.request('GET',
+                     f"{base_url}/health",
+                     headers={'Content-Type': 'application/json'})
+
+    print(f"Health status: {r.status}")
+
+    if r.status != 200:
+        raise SearchError(r.data.decode('utf-8'), r.status)
+    return jsonify({'status': 'ok'}), 200
 
 
 # in production this changes:

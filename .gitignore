@@ -24,3 +24,5 @@ docs/out/
 
 *~
 __pycache__
+.idea
+bw_db

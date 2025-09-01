@@ -19,8 +19,13 @@ FROM install AS rust_build
 
 COPY . .
 
-# Need this to avoid SSL errors. Can this be done only with pixi?
-RUN apt-get update && apt-get -y install ca-certificates
+## Need this to avoid SSL errors. Can this be done only with pixi?
+#RUN apt-get update && apt-get -y install ca-certificates
+
+RUN sed -i 's|http://|https://|g' /etc/apt/sources.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN pixi run build-server
 
@@ -54,5 +59,5 @@ WORKDIR /data
 
 EXPOSE 80/tcp
 
-#CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/sigs_indexed"]
-CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/index"]
+CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/sigs_indexed"]
+#CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/index"]

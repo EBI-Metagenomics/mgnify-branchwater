@@ -1,3 +1,4 @@
+use std::env;
 use camino::Utf8Path as Path;
 use camino::Utf8PathBuf as PathBuf;
 use clap::{Parser, Subcommand};
@@ -347,20 +348,27 @@ fn update<P: AsRef<Path>>(
     output: P,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let manifest = if let Some(m) = manifest {
+        println!("YES MANIFEST");
         let rdr = std::fs::OpenOptions::new().read(true).open(m.as_ref())?;
         Some(Manifest::from_reader(rdr)?)
     } else {
+        println!("NO MANIFEST");
         None
     };
 
     let collection = if matches!(location.as_ref().extension(), Some("zip")) {
         if let Some(m) = manifest {
+            println!("YES MANIFEST ZIP");
             let storage = ZipStorage::from_file(location)?;
             Collection::new(m, InnerStorage::new(storage))
         } else {
+            println!("NO MANIFEST ZIP");
             Collection::from_zipfile(location)?
         }
     } else {
+        println!("NO MANIFEST FS");
+        println!("{}", location.as_ref().exists());
+        println!("{}", location.as_ref().is_dir());
         let manifest = manifest.ok_or_else(|| "Need a manifest")?;
         assert!(location.as_ref().exists());
         assert!(location.as_ref().is_dir());
@@ -370,9 +378,25 @@ fn update<P: AsRef<Path>>(
             .build();
         Collection::new(manifest, InnerStorage::new(storage))
     };
+    println!("{}", output.as_ref());
 
-    let db = RevIndex::open(output.as_ref(), false, None)?;
-    db.update(collection.select(&selection)?.try_into()?)?;
+    // let db = RevIndex::open(output.as_ref(), false, None)?;
+    // db.update(collection.select(&selection)?.try_into()?)?;
+    let cwd = env::current_dir().unwrap();
+    println!("Current working directory: {}", cwd.display());
+
+    match RevIndex::open(output.as_ref(), false, None) {
+        Ok(db) => {
+            if let Err(e) = db.update(collection.select(&selection)?.try_into()?) {
+                eprintln!("Error updating database: {}", e);
+                return Err(Box::new(e));
+            }
+        }
+        Err(e) => {
+            eprintln!("Error opening database: {}", e);
+            return Err(Box::new(e));
+        }
+    }
 
     Ok(())
 }
