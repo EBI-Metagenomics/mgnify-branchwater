@@ -180,6 +180,14 @@ struct Stats {
 
 impl AppState {
     async fn search(&self, query: Signature) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        // Log request parameters and environment
+        tracing::info!(
+            threshold = self.threshold,
+            ksize = ?self.selection.ksize(),
+            scaled = ?self.selection.scaled(),
+            "starting search"
+        );
+
         let db = self.db.clone();
         let threshold = self.threshold;
         let selection = self.selection.clone();
@@ -197,6 +205,9 @@ impl AppState {
         else {
             return Err("Could not extract compatible sketch to compare".into());
         };
+
+        let n_matches = matches.len();
+        tracing::info!(n_matches, query_size, "search completed");
 
         let mut csv = vec!["SRA accession,containment".into()];
         csv.extend(matches.into_iter().map(|(path, size)| {
