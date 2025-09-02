@@ -19,3 +19,4 @@ tower-http.workspace = true
 sentry.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+serde = { version = "1.0.196", features = ["derive"] }

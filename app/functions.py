@@ -31,7 +31,8 @@ def getacc(signatures, config, use_precomputed_sketches=False):
     http = urllib3.PoolManager()
     # base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
     # base_url = '10.100.90.147'
-    base_url = 'http://index-service'
+    # base_url = 'http://index-service'
+    base_url = 'http://index'
     r = http.request('POST',
                      f"{base_url}/search",
                      body=buf.getvalue(),
@@ -76,8 +77,8 @@ def getacc(signatures, config, use_precomputed_sketches=False):
 
 
 def getmongo(acc_t, meta_list, config):
-    # client = pm.MongoClient(f"mongodb://mongodb")
-    client = pm.MongoClient(f"mongodb://mongodb-service")
+    client = pm.MongoClient(f"mongodb://mongodb")
+    # client = pm.MongoClient(f"mongodb://mongodb-service")
     db = client["sradb"]
     sradb_col = db["sradb_list"]
 

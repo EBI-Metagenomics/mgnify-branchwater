@@ -28,7 +28,10 @@ use sourmash::signature::{Signature, SigsTrait};
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     /// Path to rocksdb index dir
-    index: PathBuf,
+    // index: PathBuf,
+
+    #[clap(value_name = "INDEX_PATH", num_args = 1..)]
+    index: Vec<PathBuf>,
 
     /// Location of the data for signatures.
     /// Either a zip file or a path to a directory containing signatures.
@@ -99,8 +102,23 @@ fn main() -> Result<()> {
         }
     });
 
+    // let state = Arc::new(State {
+    //     db: Arc::new(RevIndex::open(opts.index, true, location.as_deref())?),
+    //     selection: Arc::new(selection),
+    //     threshold,
+    // });
+
+    let dbs: Vec<Arc<RevIndex>> = opts
+        .index
+        .into_iter()
+        .map(|p| RevIndex::open(p, true, location.as_deref()))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(Arc::new)
+        .collect();
+
     let state = Arc::new(State {
-        db: Arc::new(RevIndex::open(opts.index, true, location.as_deref())?),
+        dbs: Arc::new(dbs),
         selection: Arc::new(selection),
         threshold,
     });
@@ -147,22 +165,39 @@ fn main() -> Result<()> {
 type SharedState = Arc<State>;
 
 struct State {
-    db: Arc<RevIndex>,
+    dbs: Arc<Vec<Arc<RevIndex>>>,
+    // db: Arc<RevIndex>,
     selection: Arc<Selection>,
     threshold: usize,
 }
 
 impl State {
     async fn search(&self, query: Signature) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let db = self.db.clone();
+        // After
+        use std::collections::HashMap;
+
+        let dbs = self.dbs.clone();
         let threshold = self.threshold;
         let selection = self.selection.clone();
 
-        let Ok((matches, query_size)) = tokio::task::spawn_blocking(move || {
+        let Ok((merged_matches, query_size)) = tokio::task::spawn_blocking(move || {
             if let Some(mh) = prepare_query(query, &selection) {
-                let counter = db.counter_for_query(&mh);
-                let matches = db.matches_from_counter(counter, threshold);
-                Ok((matches, mh.size() as f64))
+                let mut agg: HashMap<String, usize> = HashMap::new();
+
+                for db in dbs.iter() {
+                    let counter = db.counter_for_query(&mh);
+                    let matches = db.matches_from_counter(counter, threshold);
+                    for (path, size) in matches {
+                        let key = path.to_string();
+                        *agg.entry(key).or_insert(0) += size; // sum sizes across DBs
+                    }
+                }
+
+                // Sort by descending intersection size (optional but useful)
+                let mut merged: Vec<(String, usize)> = agg.into_iter().collect();
+                merged.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+
+                Ok((merged, mh.size() as f64))
             } else {
                 Err("Could not extract compatible sketch to compare")
             }
@@ -173,7 +208,7 @@ impl State {
         };
 
         let mut csv = vec!["SRA accession,containment".into()];
-        csv.extend(matches.into_iter().map(|(path, size)| {
+        csv.extend(merged_matches.into_iter().map(|(path, size)| {
             let containment = size as f64 / query_size;
             format!(
                 "{},{}",
@@ -182,6 +217,34 @@ impl State {
             )
         }));
         Ok(csv)
+        // let db = self.db.clone();
+        // let threshold = self.threshold;
+        // let selection = self.selection.clone();
+        //
+        // let Ok((matches, query_size)) = tokio::task::spawn_blocking(move || {
+        //     if let Some(mh) = prepare_query(query, &selection) {
+        //         let counter = db.counter_for_query(&mh);
+        //         let matches = db.matches_from_counter(counter, threshold);
+        //         Ok((matches, mh.size() as f64))
+        //     } else {
+        //         Err("Could not extract compatible sketch to compare")
+        //     }
+        // })
+        // .await?
+        // else {
+        //     return Err("Could not extract compatible sketch to compare".into());
+        // };
+        //
+        // let mut csv = vec!["SRA accession,containment".into()];
+        // csv.extend(matches.into_iter().map(|(path, size)| {
+        //     let containment = size as f64 / query_size;
+        //     format!(
+        //         "{},{}",
+        //         path.split('/').last().unwrap().split('.').next().unwrap(),
+        //         containment
+        //     )
+        // }));
+        // Ok(csv)
     }
 
     fn parse_sig(&self, raw_data: &[u8]) -> Result<Signature, BoxError> {
@@ -224,9 +287,28 @@ async fn search(
     }
 }
 
-async fn health() -> Response<BoxBody> {
-    (StatusCode::OK, "I'm doing science and I'm still alive").into_response()
+#[derive(serde::Serialize)]
+struct Health {
+    status: &'static str,
+    db_count: usize,
 }
+
+async fn health(Extension(state): Extension<SharedState>) -> impl IntoResponse {
+    let body = serde_json::to_string(&Health {
+        status: "ok",
+        db_count: state.dbs.len(),
+    }).unwrap();
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body,
+    )
+}
+
+// async fn health() -> Response<BoxBody> {
+//     (StatusCode::OK, "I'm doing science and I'm still alive").into_response()
+// }
 
 async fn handle_static_serve_error(error: std::io::Error) -> impl IntoResponse {
     (

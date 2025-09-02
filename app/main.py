@@ -98,8 +98,8 @@ print(f'threshold: {THRESHOLD}')
 
 @app.route('/health', methods=["GET"])
 def check_health():
-    base_url = 'http://index-service'
-    # base_url = 'http://localhost:8083'
+    # base_url = 'http://index-service'
+    base_url = 'http://index'
     http = urllib3.PoolManager()
     r = http.request('GET',
                      f"{base_url}/health",
