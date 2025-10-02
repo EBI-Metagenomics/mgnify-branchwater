@@ -135,7 +135,8 @@ def search_by_mgyg_accession():
             'geo_loc_name_country_calc', 'organism', 'lat_lon'
         )
 
-        result_list = getmongo(acc_t, meta_list, app.config)
+        # result_list = getmongo(acc_t, meta_list, app.config)
+        result_list = getduckdb(acc_t, meta_list, app.config)
         print(f"Metadata for {len(result_list)} acc returned.")
 
         mastiff_dict = mastiff_df.to_dict('records')
@@ -256,6 +257,7 @@ def check_health():
     print(f"Health status: {r.status}")
 
     if r.status != 200:
+        raise SearchError(r.data.decode('utf-8'), r.status)
         raise SearchError(r.data.decode('utf-8'), r.status)
     return jsonify({'status': 'ok'}), 200
 
