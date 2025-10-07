@@ -51,8 +51,16 @@ def create_app():
 
             current_app.config.update(config_data)
 
-            metadata = getmetadata(current_app.config, http_pool())
-            current_app.config.metadata = metadata
+            try:
+                metadata = getmetadata(current_app.config, http_pool())
+                current_app.config.metadata = metadata
+            except Exception as e:
+                current_app.logger.warning(f"Could not fetch metadata at startup: {e}")
+                current_app.config.metadata = {"ksize": current_app.config.get("ksize", 21)}
+
+
+
+
 
     return app
 

@@ -4,6 +4,7 @@ import os
 import gzip
 import string
 
+import urllib3
 
 DEFAULT_COLUMNS = {
     "SRA_accession": pl.String,
@@ -20,7 +21,8 @@ def getmetadata(config, http):
     # GET metadata stats from index server
     base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
     # base_url = 'https://branchwater-api.jgi.doe.gov'
-    r = http.request('GET', f"{base_url}/metadata/stats")
+    # r = http.request('GET', f"{base_url}/metadata/stats")
+    r = http.request('GET', f"{base_url}/metadata/stats", timeout=urllib3.Timeout(connect=2.0, read=5.0))
     if r.status != 200:
         raise SearchError(r.data.decode('utf-8'), r.status)
 
