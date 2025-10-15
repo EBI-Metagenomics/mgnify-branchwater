@@ -1,41 +1,57 @@
-# Dedicated Dockerfile for the Python web app image
-# This allows building and pushing the app independently.
-
-# Stage 1: prepare Pixi-managed web environment
-FROM ghcr.io/prefix-dev/pixi:0.39.5-noble AS install
+FROM ghcr.io/prefix-dev/pixi:0.53.0-noble AS install
 
 WORKDIR /app
 
-# Only what we need to resolve the environment
 COPY pyproject.toml .
 COPY pixi.lock .
 
-# Use cache for rattler/pixi package downloads
-RUN --mount=type=cache,target=/root/.cache/rattler/cache,sharing=private pixi install -e web
+RUN --mount=type=cache,target=/root/.cache/rattler/cache,sharing=private pixi install
 
-# Create a shell hook that activates the web environment
-RUN pixi shell-hook -e web > /shell-hook
-RUN echo 'exec "$@"' >> /shell-hook
+RUN pixi shell-hook -e web > /shell-hook-web
+RUN echo 'exec "$@"' >> /shell-hook-web
 
-# Stage 2: runtime image for the web app
+RUN pixi shell-hook -e prepare > /shell-hook-prepare
+RUN echo 'exec "$@"' >> /shell-hook-prepare
+
+#--------------------
+
+FROM install AS rust_build
+
+COPY . .
+
+# Need this to avoid SSL errors. Can this be done only with pixi?
+RUN apt-get update && apt-get -y install ca-certificates
+
+RUN pixi run build-server
+
+#--------------------
+
 FROM ubuntu:24.04 AS web
 
-# Copy only the production environment and shell hook into the runtime image
+# only copy the production environment into prod container
 COPY --from=install /app/.pixi/envs/web /app/.pixi/envs/web
-COPY --from=install /shell-hook /shell-hook
+COPY --from=install /shell-hook-web /shell-hook
 
-# Create non-root user (optional; currently not switching to it to keep parity with existing image)
-RUN groupadd -r user \
- && useradd --create-home --home-dir /home/user -g user -s /bin/bash user
+RUN groupadd user && \
+    useradd --create-home --home-dir /home/user -g user -s /bin/bash user
 
-# Copy application source
 COPY app/ /app/web/
 
 WORKDIR /app/web
 
-# Expose the default app port
-EXPOSE 8000/tcp
+#USER user 
 
-# Entry and default command: gunicorn serving main:app
 ENTRYPOINT ["/bin/bash", "/shell-hook"]
 CMD ["gunicorn", "-b", "0.0.0.0:8000", "--timeout", "120", "--workers", "4", "--access-logfile", "-", "main:app"]
+
+#--------------------
+
+FROM ubuntu:24.04 AS index
+
+COPY --from=rust_build /app/target/release/branchwater-server /app/bin/branchwater-server
+
+WORKDIR /data
+
+EXPOSE 80/tcp
+
+CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/index"]
