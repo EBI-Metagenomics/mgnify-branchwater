@@ -83,7 +83,6 @@ polars = ">=1.12.0,<2"
 urllib3 = "~=2.0.4"
 pyyaml = "~=6.0"
 gunicorn = "~=23.0"
-pydantic = ">=1.10.7,<2"
 
 [tool.pixi.feature.web.pypi-dependencies]
 sentry-sdk = { version = "*", extras = ["flask"] }

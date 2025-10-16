@@ -24,7 +24,3 @@ docs/out/
 
 *~
 __pycache__
-.idea
-bw_db
-
-customscripts/missing_sraids.csv
