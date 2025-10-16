@@ -1,5 +1,5 @@
 threshold: 0.1
 ksize: 21
-#index_server: "http://index"
+index_server: "http://index-service"
 #metadata_duckdb: "/data/metadata.duckdb"
 metadata_duckdb: "/data/metadata.duckdb"

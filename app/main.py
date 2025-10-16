@@ -96,17 +96,17 @@ def home():
         result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
         print(f"FIRST RESULT for {result_list[0]}.")
         print(f"Metadata for {len(result_list)} acc returned.")
-        with open("public_emg_runs.json") as f:
-            accession_data = json.load(f)
 
-        # Convert to Polars Series for faster .is_in checks
-        accession_series = pl.Series("acc", accession_data["accessions"])
-
-        result_list = result_list.with_columns(
-            pl.col("acc").is_in(accession_series).alias("in_json_file")
-        )
-
-
+        # TODO: complete mag run linkage using this
+        # with open("public_emg_runs.json") as f:
+        #     accession_data = json.load(f)
+        #
+        # # Convert to Polars Series for faster .is_in checks
+        # accession_series = pl.Series("acc", accession_data["accessions"])
+        #
+        # result_list = result_list.with_columns(
+        #     pl.col("acc").is_in(accession_series).alias("in_json_file")
+        # )
 
 
         return result_list.fill_null("NP").write_json(None)  # return metadata results to client

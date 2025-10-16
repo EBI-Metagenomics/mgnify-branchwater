@@ -19,7 +19,8 @@ class SearchError(Exception):
 def getmetadata(config, http):
     # GET metadata stats from index server
     # base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
-    base_url = 'https://branchwater-api.jgi.doe.gov'
+    base_url = 'http://index-service'
+    # base_url = 'https://branchwater-api.jgi.doe.gov'
     r = http.request('GET', f"{base_url}/metadata/stats")
     if r.status != 200:
         raise SearchError(r.data.decode('utf-8'), r.status)
@@ -38,7 +39,8 @@ def getacc(signatures, config, http):
         fout.write(json_bytes)
 
     # POST to mastiff
-    base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
+    # base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
+    base_url = 'http://index-service'
     print(f'BASE URL {base_url}')
     r = http.request('POST',
                      f"{base_url}/search",
