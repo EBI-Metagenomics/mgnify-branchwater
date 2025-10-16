@@ -1,4 +1,4 @@
-FROM ghcr.io/prefix-dev/pixi:0.53.0-noble AS install
+FROM ghcr.io/prefix-dev/pixi:0.39.5-noble AS install
 
 WORKDIR /app
 
@@ -54,4 +54,5 @@ WORKDIR /data
 
 EXPOSE 80/tcp
 
+#CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/sigs_indexed"]
 CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/index"]
