@@ -1,0 +1,8 @@
+# Python dependencies for metadata container
+polars-lts-cpu>=0.20
+pandas>=2.0
+pyarrow>=14.0
+duckdb>=1.0
+google-cloud-bigquery>=3.11
+google-auth>=2.20
+s3fs>=2024.3.1
