@@ -106,7 +106,7 @@ def home():
         # accession_series = pl.Series("acc", accession_data["accessions"])
         #
         # result_list = result_list.with_columns(
-        #     pl.col("acc").is_in(accession_series).alias("in_json_file")dwdwdwdwwdwd
+        #     pl.col("acc").is_in(accession_series).alias("in_json_file")
         # )
 
         # TODO: complete mag run linkage using flattened ENA file
