@@ -74,6 +74,49 @@ print(f'ksize: {KSIZE}')
 print(f'threshold: {THRESHOLD}')
 
 
+def add_mgnify_flags(result_list: pl.DataFrame, emg_runs_path: str = "/data/emg_runs.json") -> pl.DataFrame:
+    """
+    Add exists_on_mgnify and is_private columns by joining against emg_runs.json.
+    - exists_on_mgnify: True if accession found in emg_runs, else False
+    - is_private: Boolean from emg_runs if present, else null
+    """
+    try:
+        print(f"Reading EMG runs from '{emg_runs_path}'")
+        with open(emg_runs_path, "r", encoding="utf-8") as f:
+            flat = json.load(f)
+    except FileNotFoundError:
+        print(f"EMG runs file not found at '{emg_runs_path}'. Setting defaults.")
+        return result_list.with_columns(
+            pl.lit(False).alias("exists_on_mgnify"),
+            pl.lit(None, dtype=pl.Boolean).alias("is_private"),
+        )
+    else:
+        if not isinstance(flat, list) or len(flat) == 0:
+            print("EMG runs JSON invalid or empty. Setting defaults.")
+            return result_list.with_columns(
+                pl.lit(False).alias("exists_on_mgnify"),
+                pl.lit(None, dtype=pl.Boolean).alias("is_private"),
+            )
+        # Build lookup DF: accession -> (acc, is_private)
+        ena_df = (
+            pl.DataFrame(flat)
+            .select(
+                pl.col("accession").cast(pl.Utf8).str.strip_chars().alias("acc"),
+                pl.col("is_private").cast(pl.Boolean),
+            )
+            .unique(subset=["acc"], keep="last")
+        )
+        # Normalize acc in results and join
+        return (
+            result_list
+            .with_columns(pl.col("acc").cast(pl.Utf8).str.strip_chars())
+            .join(ena_df, on="acc", how="left")  # adds is_private
+            .with_columns(
+                pl.col("is_private").is_not_null().alias("exists_on_mgnify")
+            )
+        )
+
+
 # define '/' and 'home' route
 @app.route('/', methods=['GET', "POST"])
 @app.route('/home', methods=['GET', "POST"])
@@ -95,44 +138,7 @@ def home():
         print(f"Metadata for {len(result_list)} acc returned.")
 
         # --- Link to EMG runs (exists_on_mgnify + is_private) ---
-        emg_runs_path = "/data/emg_runs.json"
-        try:
-            print(f"Reading EMG runs from '{emg_runs_path}'")
-            with open(emg_runs_path, "r", encoding="utf-8") as f:
-                flat = json.load(f)
-        except FileNotFoundError:
-            print(f"EMG runs file not found at '{emg_runs_path}'. Setting defaults.")
-            result_list = result_list.with_columns(
-                pl.lit(False).alias("exists_on_mgnify"),
-                pl.lit(None, dtype=pl.Boolean).alias("is_private"),
-            )
-        else:
-            if not isinstance(flat, list) or len(flat) == 0:
-                print("EMG runs JSON invalid or empty. Setting defaults.")
-                result_list = result_list.with_columns(
-                    pl.lit(False).alias("exists_on_mgnify"),
-                    pl.lit(None, dtype=pl.Boolean).alias("is_private"),
-                )
-            else:
-                # Build lookup DF: ena_accession -> (acc, is_private)
-                ena_df = (
-                    pl.DataFrame(flat)
-                    .select(
-                        pl.col("accession").cast(pl.Utf8).str.strip_chars().alias("acc"),
-                        pl.col("is_private").cast(pl.Boolean),
-                    )
-                    .unique(subset=["acc"], keep="last")
-                )
-
-                # Normalize acc in results and join
-                result_list = (
-                    result_list
-                    .with_columns(pl.col("acc").cast(pl.Utf8).str.strip_chars())
-                    .join(ena_df, on="acc", how="left")  # adds is_private
-                    .with_columns(
-                        pl.col("is_private").is_not_null().alias("exists_on_mgnify")
-                    )
-                )
+        result_list = add_mgnify_flags(result_list)
 
         # NOTE: If you previously relied on fill_null("NP"), that will coerce booleans.
         # Better: only fill nulls in string columns.
@@ -363,21 +369,18 @@ def search_by_mgyg_accession():
         result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
         print(f"Metadata for {len(result_list)} acc returned.")
 
-        # mastiff_dict = mastiff_df.to_dict('records')
+        # Enrich with EMG flags for MAGs endpoint too
+        result_list = add_mgnify_flags(result_list)
 
-        # for r in result_list:
-        #     for m in mastiff_dict:
-        #         if r['acc'] == m['SRA_accession']:
-        #             r['containment'] = round(m['containment'], 2)
-        #             r['cANI'] = round(m['cANI'], 2)
-        #             break
+        # Only fill nulls in string columns to avoid coercing booleans
+        string_cols = [c for c, dt in zip(result_list.columns, result_list.dtypes) if dt == pl.Utf8]
+        if string_cols:
+            result_list = result_list.with_columns([
+                pl.col(c).fill_null("NP") for c in string_cols
+            ])
 
-        # return result_list.fill_null("NP").write_json(None)
-        # return jsonify(result_list.fill_null("NP").to_dicts()), 200
-        json_body = result_list.fill_null("NP").write_json(None)
+        json_body = result_list.write_json(None)
         return Response(json_body, mimetype='application/json', status=200)
-        # return jsonify(result_list.fill_null("NP").write_json(None)), 200
-        result_list.fill_null("NP")
 
 
         # return jsonify(result_list)
