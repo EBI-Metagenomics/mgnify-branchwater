@@ -79,110 +79,181 @@ print(f'threshold: {THRESHOLD}')
 @app.route('/home', methods=['GET', "POST"])
 def home():
     if request.method == 'POST':
-        # get signatures from fetch/promise API clientside
         form_data = request.get_json()
 
-        # get acc from mastiff (imported from acc.py)
         signatures = form_data['signatures']
         try:
             mastiff_df = getacc(signatures, app.config, http_pool())
         except SearchError as e:
             return e.args
 
-        # for 'basic' query, override metadata form with selected categories
         meta_list = ('bioproject', 'assay_type',
                      'collection_date_sam', 'geo_loc_name_country_calc', 'organism', 'lat_lon')
 
-        # get metadata from duckdb
         result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
         print(f"FIRST RESULT for {result_list[0]}.")
         print(f"Metadata for {len(result_list)} acc returned.")
 
-        # TODO: complete mag run linkage using this
-        # with open("public_emg_runs.json") as f:
-        #     accession_data = json.load(f)
-        #
-        # # Convert to Polars Series for faster .is_in checks
-        # accession_series = pl.Series("acc", accession_data["accessions"])
-        #
-        # result_list = result_list.with_columns(
-        #     pl.col("acc").is_in(accession_series).alias("in_json_file")
-        # )
-
-        # TODO: complete mag run linkage using flattened ENA file
+        # --- Link to EMG runs (exists_on_mgnify + is_private) ---
         emg_runs_path = "/data/emg_runs.json"
         try:
-            # current_app.logger.info(f"Reading EMG runs from '{emg_runs_path}' (cwd={os.getcwd()})")
             print(f"Reading EMG runs from '{emg_runs_path}'")
             with open(emg_runs_path, "r", encoding="utf-8") as f:
                 flat = json.load(f)
-            # Basic sanity logging about the raw JSON
-            n_flat = len(flat) if isinstance(flat, list) else 0
-            has_acc = sum(1 for x in flat if isinstance(x, dict) and "ena_accession" in x) if isinstance(flat, list) else 0
-            has_priv = sum(1 for x in flat if isinstance(x, dict) and "is_private" in x) if isinstance(flat, list) else 0
-            # current_app.logger.info(f"emg_runs.json loaded: type={type(flat).__name__}, entries={n_flat}, entries_with_ena_accession={has_acc}, entries_with_is_private={has_priv}")
-            print(f"emg_runs.json loaded: type={type(flat).__name__}, entries={n_flat}, entries_with_ena_accession={has_acc}, entries_with_is_private={has_priv}")
         except FileNotFoundError:
-            # If the file isn't present, just add defaults and continue
-            # current_app.logger.warning(f"EMG runs file not found at '{emg_runs_path}'. Using default ena_match/is_private. (results={result_list.height})")
-            print(f"EMG runs file not found at '{emg_runs_path}'. Using default ena_match/is_private. (results={result_list.height})")
+            print(f"EMG runs file not found at '{emg_runs_path}'. Setting defaults.")
             result_list = result_list.with_columns(
-                pl.lit(False).alias("ena_match"),
+                pl.lit(False).alias("exists_on_mgnify"),
                 pl.lit(None, dtype=pl.Boolean).alias("is_private"),
             )
         else:
-            if not isinstance(flat, list) or not flat:
-                # Empty or invalid => add defaults
-                # current_app.logger.warning(f"EMG runs JSON invalid or empty (type={type(flat).__name__}, len={0 if not isinstance(flat, list) else len(flat)}). Using defaults.")
-                print(f"EMG runs JSON invalid or empty (type={type(flat).__name__}, len={0 if not isinstance(flat, list) else len(flat)}). Using defaults.")
+            if not isinstance(flat, list) or len(flat) == 0:
+                print("EMG runs JSON invalid or empty. Setting defaults.")
                 result_list = result_list.with_columns(
-                    pl.lit(False).alias("ena_match"),
+                    pl.lit(False).alias("exists_on_mgnify"),
                     pl.lit(None, dtype=pl.Boolean).alias("is_private"),
                 )
             else:
-                # Build a small DF from flattened entries and de-dup by accession
+                # Build lookup DF: ena_accession -> (acc, is_private)
                 ena_df = (
                     pl.DataFrame(flat)
                     .select(
-                        pl.col("ena_accession").cast(pl.Utf8).str.strip_chars().alias("acc"),
+                        pl.col("accession").cast(pl.Utf8).str.strip_chars().alias("acc"),
                         pl.col("is_private").cast(pl.Boolean),
                     )
-                    .unique(subset=["acc"], keep="last")  # keep last if duplicates exist
+                    .unique(subset=["acc"], keep="last")
                 )
-                try:
-                    print(f"Constructed ena_df: rows={ena_df.height}, cols={ena_df.width}; sample={ena_df.head(3).to_dicts()}")
-                    # current_app.logger.info(
-                    #     f"Constructed ena_df: rows={ena_df.height}, cols={ena_df.width}; sample={ena_df.head(3).to_dicts()}"
-                    # )
-                except Exception as e:
-                    print(f"Unable to log ena_df sample: {e}")
-                    # current_app.logger.debug(f"Unable to log ena_df sample: {e}")
 
-                # Normalize acc in results, left-join, then compute ena_match
+                # Normalize acc in results and join
                 result_list = (
                     result_list
                     .with_columns(pl.col("acc").cast(pl.Utf8).str.strip_chars())
                     .join(ena_df, on="acc", how="left")  # adds is_private
                     .with_columns(
-                        pl.col("is_private").is_not_null().alias("ena_match")
+                        pl.col("is_private").is_not_null().alias("exists_on_mgnify")
                     )
                 )
-                try:
-                    total = result_list.height
-                    matches = result_list.filter(pl.col("ena_match")).height
-                    null_priv = result_list.select(pl.col("is_private").is_null().sum().alias("nulls")).item()
-                    sample_matches = result_list.filter(pl.col("ena_match")).select(["acc", "is_private"]).head(5).to_dicts()
-                    print(f"Join complete: results={total}, ena_match_true={matches}, is_private_nulls={null_priv}, sample_matches={sample_matches}")
-                    # current_app.logger.info(
-                    #     f"Join complete: results={total}, ena_match_true={matches}, is_private_nulls={null_priv}, sample_matches={sample_matches}"
-                    # )
-                except Exception as e:
-                    print(f"Unable to log join diagnostics: {e}")
-                    # current_app.logger.debug(f"Unable to log join diagnostics: {e}")
 
+        # NOTE: If you previously relied on fill_null("NP"), that will coerce booleans.
+        # Better: only fill nulls in string columns.
+        string_cols = [c for c, dt in zip(result_list.columns, result_list.dtypes) if dt == pl.Utf8]
+        if string_cols:
+            result_list = result_list.with_columns(
+                [pl.col(c).fill_null("NP") for c in string_cols]
+            )
 
-        return result_list.fill_null("NP").write_json(None)  # return metadata results to client
+        return result_list.write_json(None)
+
     return render_template('index.html', n_datasets=f"{app.config.metadata['n_datasets']:,}")
+
+# @app.route('/', methods=['GET', "POST"])
+# @app.route('/home', methods=['GET', "POST"])
+# def home():
+#     if request.method == 'POST':
+#         # get signatures from fetch/promise API clientside
+#         form_data = request.get_json()
+#
+#         # get acc from mastiff (imported from acc.py)
+#         signatures = form_data['signatures']
+#         try:
+#             mastiff_df = getacc(signatures, app.config, http_pool())
+#         except SearchError as e:
+#             return e.args
+#
+#         # for 'basic' query, override metadata form with selected categories
+#         meta_list = ('bioproject', 'assay_type',
+#                      'collection_date_sam', 'geo_loc_name_country_calc', 'organism', 'lat_lon')
+#
+#         # get metadata from duckdb
+#         result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
+#         print(f"FIRST RESULT for {result_list[0]}.")
+#         print(f"Metadata for {len(result_list)} acc returned.")
+#
+#         # TODO: complete mag run linkage using this
+#         # with open("public_emg_runs.json") as f:
+#         #     accession_data = json.load(f)
+#         #
+#         # # Convert to Polars Series for faster .is_in checks
+#         # accession_series = pl.Series("acc", accession_data["accessions"])
+#         #
+#         # result_list = result_list.with_columns(
+#         #     pl.col("acc").is_in(accession_series).alias("in_json_file")
+#         # )
+#
+#         # TODO: complete mag run linkage using flattened ENA file
+#         emg_runs_path = "/data/emg_runs.json"
+#         try:
+#             # current_app.logger.info(f"Reading EMG runs from '{emg_runs_path}' (cwd={os.getcwd()})")
+#             print(f"Reading EMG runs from '{emg_runs_path}'")
+#             with open(emg_runs_path, "r", encoding="utf-8") as f:
+#                 flat = json.load(f)
+#             # Basic sanity logging about the raw JSON
+#             n_flat = len(flat) if isinstance(flat, list) else 0
+#             has_acc = sum(1 for x in flat if isinstance(x, dict) and "ena_accession" in x) if isinstance(flat, list) else 0
+#             has_priv = sum(1 for x in flat if isinstance(x, dict) and "is_private" in x) if isinstance(flat, list) else 0
+#             # current_app.logger.info(f"emg_runs.json loaded: type={type(flat).__name__}, entries={n_flat}, entries_with_ena_accession={has_acc}, entries_with_is_private={has_priv}")
+#             print(f"emg_runs.json loaded: type={type(flat).__name__}, entries={n_flat}, entries_with_ena_accession={has_acc}, entries_with_is_private={has_priv}")
+#         except FileNotFoundError:
+#             # If the file isn't present, just add defaults and continue
+#             # current_app.logger.warning(f"EMG runs file not found at '{emg_runs_path}'. Using default ena_match/is_private. (results={result_list.height})")
+#             print(f"EMG runs file not found at '{emg_runs_path}'. Using default ena_match/is_private. (results={result_list.height})")
+#             result_list = result_list.with_columns(
+#                 pl.lit(False).alias("ena_match"),
+#                 pl.lit(None, dtype=pl.Boolean).alias("is_private"),
+#             )
+#         else:
+#             if not isinstance(flat, list) or not flat:
+#                 # Empty or invalid => add defaults
+#                 # current_app.logger.warning(f"EMG runs JSON invalid or empty (type={type(flat).__name__}, len={0 if not isinstance(flat, list) else len(flat)}). Using defaults.")
+#                 print(f"EMG runs JSON invalid or empty (type={type(flat).__name__}, len={0 if not isinstance(flat, list) else len(flat)}). Using defaults.")
+#                 result_list = result_list.with_columns(
+#                     pl.lit(False).alias("ena_match"),
+#                     pl.lit(None, dtype=pl.Boolean).alias("is_private"),
+#                 )
+#             else:
+#                 # Build a small DF from flattened entries and de-dup by accession
+#                 ena_df = (
+#                     pl.DataFrame(flat)
+#                     .select(
+#                         pl.col("ena_accession").cast(pl.Utf8).str.strip_chars().alias("acc"),
+#                         pl.col("is_private").cast(pl.Boolean),
+#                     )
+#                     .unique(subset=["acc"], keep="last")  # keep last if duplicates exist
+#                 )
+#                 try:
+#                     print(f"Constructed ena_df: rows={ena_df.height}, cols={ena_df.width}; sample={ena_df.head(3).to_dicts()}")
+#                     # current_app.logger.info(
+#                     #     f"Constructed ena_df: rows={ena_df.height}, cols={ena_df.width}; sample={ena_df.head(3).to_dicts()}"
+#                     # )
+#                 except Exception as e:
+#                     print(f"Unable to log ena_df sample: {e}")
+#                     # current_app.logger.debug(f"Unable to log ena_df sample: {e}")
+#
+#                 # Normalize acc in results, left-join, then compute ena_match
+#                 result_list = (
+#                     result_list
+#                     .with_columns(pl.col("acc").cast(pl.Utf8).str.strip_chars())
+#                     .join(ena_df, on="acc", how="left")  # adds is_private
+#                     .with_columns(
+#                         pl.col("is_private").is_not_null().alias("ena_match")
+#                     )
+#                 )
+#                 try:
+#                     total = result_list.height
+#                     matches = result_list.filter(pl.col("ena_match")).height
+#                     null_priv = result_list.select(pl.col("is_private").is_null().sum().alias("nulls")).item()
+#                     sample_matches = result_list.filter(pl.col("ena_match")).select(["acc", "is_private"]).head(5).to_dicts()
+#                     print(f"Join complete: results={total}, ena_match_true={matches}, is_private_nulls={null_priv}, sample_matches={sample_matches}")
+#                     # current_app.logger.info(
+#                     #     f"Join complete: results={total}, ena_match_true={matches}, is_private_nulls={null_priv}, sample_matches={sample_matches}"
+#                     # )
+#                 except Exception as e:
+#                     print(f"Unable to log join diagnostics: {e}")
+#                     # current_app.logger.debug(f"Unable to log join diagnostics: {e}")
+#
+#
+#         return result_list.fill_null("NP").write_json(None)  # return metadata results to client
+#     return render_template('index.html', n_datasets=f"{app.config.metadata['n_datasets']:,}")
 
 
 @app.route('/advanced', methods=['GET', "POST"])

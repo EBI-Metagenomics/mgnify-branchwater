@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Set, Tuple
 
 
 def flatten_ena_json(records: List[Dict[str, Any]], dedup: bool = False) -> List[Dict[str, Any]]:
+    print('')
     out: List[Dict[str, Any]] = []
 
     if dedup:
