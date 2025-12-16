@@ -24,3 +24,7 @@ docs/out/
 
 *~
 __pycache__
+.idea/
+app/.idea/
+*/.idea
+bw_db
