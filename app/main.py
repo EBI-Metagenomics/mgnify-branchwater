@@ -18,6 +18,16 @@ sentry_sdk.init(
 
 from functions import getacc, getmetadata, getduckdb, SearchError
 
+from flask import request, render_template
+import io
+import gzip
+
+# from sourmash import MinHash, SourmashSignature, save_signatures
+# from sourmash.seq import read_fasta
+
+from sourmash import MinHash, SourmashSignature
+from sourmash.signature import save_signatures
+
 
 def http_pool():
     if 'pool' not in g:
@@ -151,6 +161,179 @@ def home():
         return result_list.write_json(None)
 
     return render_template('index.html', n_datasets=f"{app.config.metadata['n_datasets']:,}")
+
+
+
+def _read_fasta_text(handle):
+    """Minimal FASTA reader yielding (header, sequence) from a text-mode file-like.
+    Lines starting with '>' start a new record; sequences are concatenated.
+    """
+    header = None
+    seq_chunks = []
+    for line in handle:
+        if not line:
+            continue
+        if line.startswith('>'):
+            if header is not None:
+                yield header, ''.join(seq_chunks)
+            header = line[1:].strip()
+            seq_chunks = []
+        else:
+            seq_chunks.append(line.strip())
+    if header is not None:
+        yield header, ''.join(seq_chunks)
+
+
+@app.route("/fasta", methods=["GET", "POST"])
+def fasta():
+    if request.method == "POST":
+        # Expect multipart/form-data with a file field named "fasta"
+        if "fasta" not in request.files:
+            return {"error": "Missing file upload. Send multipart/form-data with field name 'fasta'."}, 400
+
+        fasta_file = request.files["fasta"]
+        if not fasta_file.filename:
+            return {"error": "Empty filename for uploaded FASTA."}, 400
+
+        # Optional: allow client to override sketch params via form fields
+        try:
+            ksize = int(request.form.get("ksize", 21))
+            scaled = int(request.form.get("scaled", 1000))
+            seed = int(request.form.get("seed", 42))
+        except ValueError:
+            return {"error": "Parameters 'ksize', 'scaled', and 'seed' must be integers."}, 400
+
+        # Read uploaded bytes
+        data = fasta_file.read()
+        if not data:
+            return {"error": "Uploaded file is empty."}, 400
+
+        # Detect gzip by magic number and wrap in a text reader
+        if data[:2] == b"\x1f\x8b":
+            # gzipped
+            text_handle = io.TextIOWrapper(gzip.GzipFile(fileobj=io.BytesIO(data)), encoding="utf-8", errors="replace")
+        else:
+            # plain text
+            text_handle = io.StringIO(data.decode("utf-8", errors="replace"))
+
+        # --- Sketch with sourmash ---
+        mh = MinHash(n=0, ksize=ksize, scaled=scaled, seed=seed)
+
+        n_records = 0
+        for _name, seq in _read_fasta_text(text_handle):
+            n_records += 1
+            mh.add_sequence(seq, force=True)
+
+        if n_records == 0:
+            return {"error": "No FASTA records found in uploaded file."}, 400
+
+        sig = SourmashSignature(mh, name=fasta_file.filename, filename=fasta_file.filename)
+
+        # Save signature to an in-memory .sig JSON string
+        sig_buf = io.StringIO()
+        save_signatures([sig], fp=sig_buf)
+        sig_buf.seek(0)
+
+        # Produce list[dict] for downstream functions
+        try:
+            signatures = json.loads(sig_buf.getvalue())
+        except json.JSONDecodeError:
+            return {"error": "Failed to encode sourmash signature as JSON."}, 500
+
+        # --- Existing downstream processing ---
+        try:
+            mastiff_df = getacc(signatures, app.config, http_pool())
+        except SearchError as e:
+            return e.args, 400
+
+        meta_list = (
+            "bioproject", "assay_type", "collection_date_sam",
+            "geo_loc_name_country_calc", "organism", "lat_lon"
+        )
+
+        result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
+        print(f"FIRST RESULT for {result_list[0]}.")
+        print(f"Metadata for {len(result_list)} acc returned.")
+
+        result_list = add_mgnify_flags(result_list)
+
+        string_cols = [c for c, dt in zip(result_list.columns, result_list.dtypes) if dt == pl.Utf8]
+        if string_cols:
+            result_list = result_list.with_columns([pl.col(c).fill_null("NP") for c in string_cols])
+
+        return result_list.write_json(None)
+
+    # GET → render page
+    return render_template("index.html", n_datasets=f"{app.config.metadata['n_datasets']:,}")
+
+# @app.route("/fasta", methods=["GET", "POST"])
+# def fasta():
+#     if request.method == "POST":
+#         # Expect multipart/form-data with a file field named "fasta"
+#         if "fasta" not in request.files:
+#             return {"error": "Missing file upload. Send multipart/form-data with field name 'fasta'."}, 400
+#
+#         fasta_file = request.files["fasta"]
+#         if not fasta_file.filename:
+#             return {"error": "Empty filename for uploaded FASTA."}, 400
+#
+#         # Optional: allow client to override sketch params via form fields
+#         ksize = int(request.form.get("ksize", 21))
+#         scaled = int(request.form.get("scaled", 1000))
+#
+#         # Read uploaded FASTA bytes -> text stream for sourmash reader
+#         fasta_text = fasta_file.stream.read().decode("utf-8", errors="replace")
+#         fasta_stream = io.StringIO(fasta_text)
+#
+#         # --- Sketch with sourmash ---
+#         mh = MinHash(n=0, ksize=ksize, scaled=scaled)
+#
+#         n_records = 0
+#         # for name, seq in read_fasta(fasta_stream):
+#         #     n_records += 1
+#         #     mh.add_sequence(seq, force=True)
+#         for rec in screed_open('genome.fa'):
+#         # force=True allows mixed-case or invalid DNA chars (they’re ignored)
+#             mh.add_sequence(rec.sequence, force=True)
+#
+#         if n_records == 0:
+#             return {"error": "No FASTA records found in uploaded file."}, 400
+#
+#         sig = SourmashSignature(mh, name=fasta_file.filename, filename=fasta_file.filename)
+#
+#         # Save signature(s) to an in-memory .sig JSON string
+#         sig_buf = io.StringIO()
+#         save_signatures([sig], fp=sig_buf)
+#         sig_buf.seek(0)
+#
+#         # Most APIs expect a list of signature dicts
+#         signatures = json.loads(sig_buf.getvalue())
+#
+#         # --- Proceed as-is ---
+#         try:
+#             mastiff_df = getacc(signatures, app.config, http_pool())
+#         except SearchError as e:
+#             return e.args, 400
+#
+#         meta_list = (
+#             "bioproject", "assay_type", "collection_date_sam",
+#             "geo_loc_name_country_calc", "organism", "lat_lon"
+#         )
+#
+#         result_list = getduckdb(mastiff_df, meta_list, app.config, duckdb_client(app.config)).pl()
+#         print(f"FIRST RESULT for {result_list[0]}.")
+#         print(f"Metadata for {len(result_list)} acc returned.")
+#
+#         result_list = add_mgnify_flags(result_list)
+#
+#         string_cols = [c for c, dt in zip(result_list.columns, result_list.dtypes) if dt == pl.Utf8]
+#         if string_cols:
+#             result_list = result_list.with_columns([pl.col(c).fill_null("NP") for c in string_cols])
+#
+#         return result_list.write_json(None)
+#
+#     return render_template("index.html", n_datasets=f"{app.config.metadata['n_datasets']:,}")
+
 
 # @app.route('/', methods=['GET', "POST"])
 # @app.route('/home', methods=['GET', "POST"])
