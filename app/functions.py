@@ -21,6 +21,7 @@ def getmetadata(config, http):
     # GET metadata stats from index server
     # base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
     base_url = 'http://index-service'
+    # base_url = 'http://index'
     # base_url = 'https://branchwater-api.jgi.doe.gov'
     r = http.request('GET', f"{base_url}/metadata/stats")
     if r.status != 200:
@@ -32,6 +33,7 @@ def getmetadata(config, http):
 
 
 def getacc(signatures, config, http, use_precomputed_sketches=False):
+    print(f"OG SIGS {signatures}")
     if not use_precomputed_sketches:
         sig_str = signatures.translate({ord(c): None for c in string.whitespace})
 
@@ -45,6 +47,7 @@ def getacc(signatures, config, http, use_precomputed_sketches=False):
     # POST to mastiff
     # base_url = config.get('index_server', 'https://branchwater-api.jgi.doe.gov')
     base_url = 'http://index-service'
+    # base_url = 'http://index'
     print(f'BASE URL {base_url}')
     r = http.request('POST',
                      f"{base_url}/search",
