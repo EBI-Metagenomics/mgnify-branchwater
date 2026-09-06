@@ -61,5 +61,15 @@ EXPOSE 80/tcp
 
 
 
-CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/sigs_indexed"]
-#CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/index"]
+CMD ["/app/bin/branchwater-server", "--port", "80", "-k21", "--location", "/data/sigs.zip", "/data/index"]
+
+# Diagnostic image used for read-only inspection of an existing index. Keeping
+# this as a separate target avoids adding administrative tooling to the normal
+# server image.
+FROM rust_build AS diagnostic_build
+
+RUN pixi run cargo build --release -p branchwater-index
+
+FROM index AS diagnostic
+
+COPY --from=diagnostic_build /app/target/release/branchwater-index /app/bin/branchwater-index

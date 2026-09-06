@@ -11,6 +11,9 @@ repository = "https://github.com/sourmash-bio/branchwater"
 camino.workspace = true
 clap.workspace = true
 numsep.workspace = true
+rocksdb.workspace = true
+roaring.workspace = true
+serde_json.workspace = true
 size.workspace = true
 sourmash = { workspace = true, features = ["branchwater"] }
 tracing.workspace = true

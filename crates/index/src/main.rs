@@ -1,6 +1,8 @@
 use camino::Utf8Path as Path;
 use camino::Utf8PathBuf as PathBuf;
 use clap::{Parser, Subcommand};
+use roaring::RoaringBitmap;
+use rocksdb::{ColumnFamilyDescriptor, MergeOperands, Options};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -114,6 +116,25 @@ enum Commands {
         /// avoid deserializing data, and without stats
         #[clap(long = "quick")]
         quick: bool,
+    },
+    Inspect {
+        /// Query signature whose hash records should be inspected.
+        query_path: PathBuf,
+
+        /// Path to the RocksDB index directory.
+        index: PathBuf,
+
+        /// ksize
+        #[clap(short = 'k', long = "ksize", default_value = "31")]
+        ksize: u8,
+
+        /// scaled
+        #[clap(short = 's', long = "scaled", default_value = "1000")]
+        scaled: usize,
+
+        /// Save each invalid raw value to this directory.
+        #[clap(long = "dump-dir")]
+        dump_dir: Option<PathBuf>,
     },
     Convert {
         /// The path for the input DB
@@ -506,6 +527,197 @@ fn check<P: AsRef<Path>>(output: P, quick: bool) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
+fn decode_datasets_value(value: &[u8]) -> Result<RoaringBitmap, String> {
+    if value.len() == 1 {
+        return Ok(RoaringBitmap::new());
+    }
+
+    if value.len() == 8 {
+        let dataset_id = u32::from_le_bytes(
+            value[..4]
+                .try_into()
+                .map_err(|_| "could not decode the unique dataset id".to_string())?,
+        );
+        return Ok([dataset_id].into_iter().collect());
+    }
+
+    RoaringBitmap::deserialize_from(value).map_err(|error| error.to_string())
+}
+
+fn encode_datasets_value(datasets: &RoaringBitmap) -> Option<Vec<u8>> {
+    match datasets.len() {
+        0 => Some(vec![42]),
+        1 => {
+            let dataset_id = datasets.min()?;
+            let mut output = vec![0; 8];
+            output[..4].copy_from_slice(&dataset_id.to_le_bytes());
+            Some(output)
+        }
+        _ => {
+            let mut output = Vec::new();
+            datasets.serialize_into(&mut output).ok()?;
+            Some(output)
+        }
+    }
+}
+
+fn inspect_merge_datasets(
+    _key: &[u8],
+    existing_value: Option<&[u8]>,
+    operands: &MergeOperands,
+) -> Option<Vec<u8>> {
+    let mut datasets = RoaringBitmap::new();
+
+    if let Some(value) = existing_value {
+        match decode_datasets_value(value) {
+            Ok(decoded) => datasets |= decoded,
+            // Preserve malformed data so the inspector can report it.
+            Err(_) => return Some(value.to_vec()),
+        }
+    }
+
+    for operand in operands {
+        match decode_datasets_value(operand) {
+            Ok(decoded) => datasets |= decoded,
+            // Preserve malformed data so the inspector can report it.
+            Err(_) => return Some(operand.to_vec()),
+        }
+    }
+
+    encode_datasets_value(&datasets)
+}
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut output, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    output
+}
+
+fn bytes_to_ascii(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| {
+            if byte.is_ascii_graphic() || *byte == b' ' {
+                char::from(*byte)
+            } else {
+                '.'
+            }
+        })
+        .collect()
+}
+
+fn inspect_index<P: AsRef<Path>>(
+    query_path: P,
+    index: P,
+    selection: Selection,
+    dump_dir: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let query_sig = Signature::from_path(query_path.as_ref())?
+        .into_iter()
+        .next()
+        .ok_or("the query file does not contain a signature")?
+        .select(&selection)?;
+    let query = prepare_query(query_sig, &selection)
+        .ok_or("could not extract a compatible MinHash from the query")?;
+
+    let db_options = Options::default();
+    let column_family_names = rocksdb::DB::list_cf(&db_options, index.as_ref().as_std_path())?;
+    let column_families = column_family_names.into_iter().map(|name| {
+        let mut options = Options::default();
+        if name == "hashes" || name == "metadata" {
+            options.set_merge_operator_associative("datasets operator", inspect_merge_datasets);
+        }
+        ColumnFamilyDescriptor::new(name, options)
+    });
+    let db = rocksdb::DB::open_cf_descriptors_read_only(
+        &db_options,
+        index.as_ref().as_std_path(),
+        column_families,
+        false,
+    )?;
+    let hashes = db
+        .cf_handle("hashes")
+        .ok_or("the index does not contain a 'hashes' column family")?;
+
+    if let Some(path) = &dump_dir {
+        std::fs::create_dir_all(path.as_std_path())?;
+    }
+
+    let mut inspected = 0_u64;
+    let mut present = 0_u64;
+    let mut invalid = 0_u64;
+    let mut read_errors = 0_u64;
+
+    for hash in query.iter_mins() {
+        inspected += 1;
+        let key = hash.to_le_bytes();
+        let value = match db.get_cf(&hashes, key) {
+            Ok(Some(value)) => {
+                present += 1;
+                value
+            }
+            Ok(None) => continue,
+            Err(error) => {
+                read_errors += 1;
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "rocksdb_read_error",
+                        "hash": hash,
+                        "key_hex_little_endian": bytes_to_hex(&key),
+                        "error": error.to_string(),
+                    })
+                );
+                continue;
+            }
+        };
+
+        if let Err(error) = decode_datasets_value(&value) {
+            invalid += 1;
+            let prefix_length = value.len().min(32);
+            let prefix = &value[..prefix_length];
+            let dumped_to = if let Some(path) = &dump_dir {
+                let output_path = path.join(format!("hash-{hash}.bin"));
+                std::fs::write(output_path.as_std_path(), &value)?;
+                Some(output_path)
+            } else {
+                None
+            };
+
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "invalid",
+                    "hash": hash,
+                    "key_hex_little_endian": bytes_to_hex(&key),
+                    "value_length": value.len(),
+                    "value_prefix_hex": bytes_to_hex(prefix),
+                    "value_prefix_ascii": bytes_to_ascii(prefix),
+                    "deserialization_error": error,
+                    "dumped_to": dumped_to,
+                })
+            );
+        }
+    }
+
+    eprintln!(
+        "inspected={inspected} present={present} invalid={invalid} rocksdb_read_errors={read_errors}"
+    );
+
+    if invalid > 0 || read_errors > 0 {
+        return Err(format!(
+            "found {invalid} invalid values and {read_errors} RocksDB read errors"
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 /* TODO: need the repair_cf variant, not available in rocksdb-rust yet
 fn repair<P: AsRef<Path>>(output: P, colors: bool) {
     info!("Starting repair");
@@ -557,6 +769,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             update(location, manifest, selection, output)?
         }
         Check { output, quick } => check(output, quick)?,
+        Inspect {
+            query_path,
+            index,
+            ksize,
+            scaled,
+            dump_dir,
+        } => {
+            let selection = Selection::builder()
+                .ksize(ksize.into())
+                .scaled(scaled as u32)
+                .build();
+
+            inspect_index(query_path, index, selection, dump_dir)?
+        }
         Convert { input, output } => convert(input, output)?,
         Manifest {
             pathlist,
@@ -622,4 +848,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn verify_cli() {
     use clap::CommandFactory;
     Cli::command().debug_assert()
+}
+
+#[cfg(test)]
+mod inspect_tests {
+    use super::{decode_datasets_value, encode_datasets_value};
+    use roaring::RoaringBitmap;
+
+    #[test]
+    fn dataset_value_round_trips_supported_encodings() {
+        for datasets in [
+            RoaringBitmap::new(),
+            [7].into_iter().collect(),
+            [7, 11, 42].into_iter().collect(),
+        ] {
+            let encoded = encode_datasets_value(&datasets).expect("encoding failed");
+            let decoded = decode_datasets_value(&encoded).expect("decoding failed");
+            assert_eq!(decoded, datasets);
+        }
+    }
+
+    #[test]
+    fn dataset_value_reports_the_roaring_cookie_error() {
+        let error = decode_datasets_value(b"this is not a roaring bitmap")
+            .expect_err("invalid data unexpectedly decoded");
+        assert_eq!(error, "unknown cookie value");
+    }
 }
